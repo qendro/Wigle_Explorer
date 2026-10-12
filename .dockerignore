@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+!.env.example
+deps
+_build
+assets/node_modules
+priv/static/assets
+test
+tmp
+.DS_Store

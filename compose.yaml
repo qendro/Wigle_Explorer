@@ -1,0 +1,22 @@
+name: ${COMPOSE_PROJECT_NAME:-wigle-explorer}
+
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:${APP_PORT:-4100}:4000"
+    environment:
+      WIGLE_API_NAME: ${WIGLE_API_NAME:-}
+      WIGLE_API_TOKEN: ${WIGLE_API_TOKEN:-}
+      MAP_STYLE_URL: ${MAP_STYLE_URL:-https://tiles.openfreemap.org/styles/positron}
+    volumes:
+      - .:/app
+      - deps:/app/deps
+      - build:/app/_build
+      - node_modules:/app/assets/node_modules
+    init: true
+
+volumes:
+  deps:
+  build:
+  node_modules:

@@ -1,0 +1,326 @@
+<header class="site-header">
+  <div class="header-inner">
+    <a href={~p"/"} class="brand" aria-label="WiGLE Explorer home">
+      <span class="brand-mark"><.icon name="wifi" /></span>
+      <span class="brand-name">WiGLE <span>Explorer</span></span>
+    </a>
+    <div class="header-meta">
+      <span class="status-dot"></span>
+      Wireless network explorer <span class="version">MVP / 01</span>
+    </div>
+  </div>
+</header>
+
+<main class="explorer">
+  <section class="page-heading">
+    <div>
+      <span class="eyebrow">A LITTLE EXPLORATION GOES A LONG WAY</span><h1>Networks, mapped.</h1><p>
+        Move the map. Search an area. Discover what's around you.
+      </p>
+    </div>
+    <div class="search-action">
+      <div class="area-controls">
+        <form id="network-type-form" phx-change="network_type">
+          <label class="network-type-control">
+            <span>Network type</span>
+            <select id="network-type" name="network_type" disabled={@loading != nil}>
+              <option value="wifi" selected={@network_type == "wifi"}>Wi-Fi</option>
+              <option value="bluetooth" selected={@network_type == "bluetooth"}>Bluetooth</option>
+              <option value="cellular" selected={@network_type == "cellular"}>Cellular</option>
+            </select>
+          </label>
+        </form>
+        <button
+          id="draw-area"
+          class={["button", "button-secondary", @drawing_area? && "button-active"]}
+          phx-click={JS.dispatch("wigle:draw", to: "#map-shell")}
+          disabled={@loading != nil}
+          aria-pressed={to_string(@drawing_area?)}
+        >
+          {if @drawing_area?, do: "Cancel drawing", else: "Draw area"}
+        </button>
+        <button
+          :if={@area_selected?}
+          id="clear-area"
+          class="button button-text"
+          phx-click={JS.dispatch("wigle:clear-area", to: "#map-shell")}
+          disabled={@loading != nil}
+        >
+          Clear area
+        </button>
+        <button
+          id="search-area"
+          class="button button-primary"
+          phx-click={JS.dispatch("wigle:search", to: "#map-shell")}
+          disabled={!@configured? or @loading != nil or @drawing_area?}
+        >
+          <span :if={@loading == :search} class="spinner"></span>
+          <.icon :if={@loading != :search} name="area" />
+          {cond do
+            @loading == :search -> "Searching WiGLE…"
+            @area_selected? -> "Search selected area"
+            true -> "Search this area"
+          end}
+        </button>
+      </div>
+      <span>One search. Only when you're ready.</span>
+    </div>
+  </section>
+
+  <section class="advanced-search" aria-label="Advanced search">
+    <button
+      id="toggle-advanced"
+      class="advanced-toggle"
+      phx-click="toggle_advanced"
+      aria-expanded={to_string(@advanced_open?)}
+      aria-controls="advanced-search-content"
+    >
+      <span><.icon name="search" /> Advanced search</span>
+      <span class="advanced-toggle-hint">Find a name or address <.icon name="chevron" /></span>
+    </button>
+    <div id="advanced-search-content" hidden={!@advanced_open?}>
+      <.advanced_search_form
+        values={@advanced_values}
+        loading={@loading}
+        configured?={@configured?}
+        drawing?={@drawing_area?}
+      />
+    </div>
+  </section>
+
+  <div :if={!@configured?} class="notice config-notice" role="status">
+    <.icon name="info" /><div>
+      <strong>Connect WiGLE to start exploring</strong><p>
+        Add <code>WIGLE_API_NAME</code>
+        and <code>WIGLE_API_TOKEN</code>
+        to <code>.env</code>, then run <code>docker compose up -d --force-recreate</code>.
+      </p>
+    </div>
+  </div>
+  <div :if={@error} id="api-error" class="notice error-notice" role="alert">
+    <.icon name="info" /><p>{@error}</p>
+  </div>
+  <div
+    :if={@result && @result.network_type != @network_type}
+    id="network-type-notice"
+    class="notice"
+    role="status"
+  >
+    <.icon name="info" />
+    <p>
+      Network type changed. Loaded results are <strong>{type_label(@result.network_type)}</strong>. Press Search to update.
+    </p>
+  </div>
+  <div
+    id="connection-status"
+    class="notice error-notice"
+    hidden
+    phx-disconnected={JS.remove_attribute("hidden", to: "#connection-status")}
+    phx-connected={JS.set_attribute({"hidden", ""}, to: "#connection-status")}
+  >
+    Connection lost. Reconnecting…
+  </div>
+
+  <section class="map-section" aria-label="Network map">
+    <div
+      id="map-shell"
+      class="map-shell"
+      phx-hook="MapHook"
+      phx-update="ignore"
+      data-style={@map_style}
+    >
+      <div id="map-canvas" class="map-canvas"></div>
+      <div
+        id="area-drawing-surface"
+        class="area-drawing-surface"
+        hidden
+        tabindex="0"
+        aria-label="Drag a box to select a search area. Press Escape to cancel."
+      >
+      </div>
+      <div class="map-label">
+        <.icon name="layers" /><span id="map-area-label">VISIBLE AREA</span><span class="map-label-divider"></span><span
+          id="map-coordinates"
+          class="mono"
+        >Loading map…</span>
+      </div>
+      <div id="area-draw-hint" class="area-draw-hint" hidden role="status">
+        Drag a box to select an area · Esc to cancel
+      </div>
+      <div id="map-moved" class="map-moved" hidden>
+        Search area changed — results below are from the previous search area.
+      </div>
+      <div id="map-error" class="map-error" hidden role="alert"></div>
+      <div class="map-legend">
+        <span class="legend-dot"></span>
+        Observation <span class="legend-cluster">12</span>
+        Cluster <span class="legend-hint">Click to explore</span>
+      </div>
+    </div>
+    <div class="map-caption">
+      <span><.icon name="pin" /> Pan and zoom to choose your search area</span><span>Map movement never uses WiGLE API calls</span>
+    </div>
+  </section>
+
+  <p :if={@result && @result.description} id="search-description" class="search-description">
+    <strong>Loaded search</strong> {@result.description}
+  </p>
+
+  <section class="summary" aria-label="Search summary" aria-live="polite">
+    <div>
+      <span class="summary-label">Matching {record_label(@display_type)}</span><strong id="total-count">{number(
+        @result && @result.total_results
+      )}</strong><span class="summary-note">{if @result && @result.description,
+        do: "For the loaded search",
+        else: "In the searched area"}</span>
+    </div>
+    <div>
+      <span class="summary-label">{String.capitalize(record_label(@display_type))} loaded</span><strong id="loaded-count">{if @result,
+        do: number(length(@result.networks)),
+        else: "0"}<span :if={@result}> / {number(@result.total_results)}</span></strong><span class="summary-note">On the map & in the table</span>
+    </div>
+    <div>
+      <span class="summary-label">Newest observation</span><strong class="summary-date">{date(
+        @newest
+      )}</strong><span class="summary-note">From loaded records</span>
+    </div>
+    <div>
+      <span class="summary-label">Oldest observation</span><strong class="summary-date">{date(
+        @oldest
+      )}</strong><span class="summary-note">From loaded records</span>
+    </div>
+  </section>
+
+  <section class="results-section" aria-labelledby="results-title">
+    <div class="results-heading">
+      <div class="results-title">
+        <h2 id="results-title">{type_label(@display_type)} {record_label(@display_type)}</h2><span class="count-pill">{if @result,
+          do: number(length(@result.networks)),
+          else: "0"}</span>
+      </div>
+      <p>Observations, not live connections.</p>
+    </div>
+    <div class="results-toolbar">
+      <form id="table-controls" class="table-controls" phx-change="filter" phx-submit="filter">
+        <label class="filter-input"><.icon name="search" /><span class="sr-only">Filter loaded records by name or identifier</span><input
+          name="filter"
+          type="search"
+          value={@filter}
+          placeholder={filter_placeholder(@display_type)}
+          phx-debounce="200"
+          autocomplete="off"
+        /></label>
+        <label class="sort-control"><span>Sort by</span><select
+          name="sort"
+          aria-label="Sort loaded networks"
+        ><option value="last_seen" selected={@sort == "last_seen"}>Last seen · newest</option><option
+          value="first_seen"
+          selected={@sort == "first_seen"}
+        >
+          First seen · newest
+        </option><option value="name" selected={@sort == "name"}>
+          {name_label(@display_type)} · A–Z
+        </option></select></label>
+      </form>
+      <span class="local-label">Filters apply to loaded records</span>
+    </div>
+    <div class="table-scroll">
+      <table id="networks-table">
+        <thead>
+          <tr>
+            <th>{name_label(@display_type)}</th><th>{identifier_label(@display_type)}</th><th>
+              {type_column(@display_type)}
+            </th><th>{extra_column(@display_type)}</th><th>First seen</th><th>
+              Last seen
+            </th><th>Location</th><th><span class="sr-only">Details</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            :for={network <- @visible_networks}
+            id={"network-#{network.id}"}
+            class={["network-row", @selected && @selected.id == network.id && "selected-row"]}
+            phx-click="select_network"
+            phx-value-id={network.id}
+          >
+            <td>
+              <button class="network-name" phx-click="select_network" phx-value-id={network.id}><span class="row-dot"></span>{network_name(
+                network
+              )}</button>
+            </td>
+            <td class="mono identifier-cell" title={display(network.identifier)}>
+              {display(network.identifier)}
+            </td>
+            <td>
+              <span class={["badge", badge_class(network)]}>{badge_value(network)}</span>
+            </td>
+            <td
+              class={if network.kind == "bluetooth", do: "capabilities-cell", else: "channel"}
+              title={extra_value(network)}
+            >
+              {extra_value(network)}
+            </td>
+            <td>{date(network.first_seen)}</td><td>{date(network.last_seen)}</td>
+            <td class="location-cell">{location(network)}</td><td><.icon name="chevron" /></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div :if={@visible_networks == []} class="empty-state" id="empty-state">
+      <div class="empty-icon">
+        <.icon name={if @filter == "", do: type_icon(@display_type), else: "search"} />
+      </div>
+      <h3>
+        {cond do
+          @filter != "" -> "No matching loaded #{record_label(@display_type)}"
+          @result -> "No #{record_label(@display_type)} found for this search"
+          true -> "Your next discovery starts here"
+        end}
+      </h3>
+      <p>
+        {cond do
+          @filter != "" -> "Try a different name or identifier, or clear the filter."
+          @result -> "Adjust your search, or try another area."
+          true -> "Choose an area on the map, then click Search this area."
+        end}
+      </p>
+      <span :if={!@result} class="empty-footnote">Results will appear on the map and in this table.</span>
+    </div>
+    <div class="results-footer">
+      <span>{if @result,
+        do:
+          "#{number(length(@visible_networks))} shown · #{number(length(@result.networks))} loaded",
+        else: "No search yet"}</span>
+      <div :if={@result && !@result.complete?} class="pagination">
+        <span class="remaining">{number(SearchResult.remaining(@result))} remaining · ≈ {SearchResult.estimated_requests(
+          @result
+        )} more requests</span>
+        <button
+          id="load-more"
+          class="button button-secondary"
+          phx-click="load_more"
+          disabled={@loading != nil}
+        ><span :if={@loading == :page} class="spinner"></span>{if @loading == :page,
+          do: "Loading more…",
+          else: "Load up to 100 more"}</button>
+        <button
+          id="load-all"
+          class="button button-text"
+          phx-click="load_all"
+          disabled={@loading != nil}
+        >Load all <.icon name="arrow" /></button>
+      </div>
+      <span :if={@result && @result.complete?} class="complete-label">All available results loaded</span>
+    </div>
+    <div :if={@load_warning?} id="load-all-warning" class="load-warning" role="status">
+      Load all is limited to 10 additional requests at a time. This search may need more; zoom in or load another batch manually.
+    </div>
+  </section>
+
+  <footer class="page-footer">
+    <span>Built for curiosity.</span><span>Network observations by
+    <a href="https://wigle.net" target="_blank" rel="noopener noreferrer">WiGLE.net
+    <.icon name="arrow" /></a></span>
+  </footer>
+  <.detail_drawer :if={@selected} network={@selected} />
+</main>

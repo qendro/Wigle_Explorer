@@ -1,0 +1,5 @@
+{
+  "name": "wigle-explorer-assets",
+  "private": true,
+  "dependencies": {"maplibre-gl": "6.14.0"}
+}
